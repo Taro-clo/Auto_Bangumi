@@ -411,7 +411,9 @@ class Slots(BaseModel):
         default="hold",
         description="How to handle a higher revision targeting an existing episode",
     )
-    media_files: str = Field(default=CORE_ID, description="Media file classifier")
+    media_files: str = Field(
+        default="special-filter", description="Media file classifier"
+    )
 
 
 class Plugins(BaseModel):

@@ -139,6 +139,103 @@ def torrent_parser(
     return result
 
 
+# 集数只采纳下面这些「带标记」的规则：第N話 / #N / SxxEyy / Season x Episode y。
+# episode.trailing（结尾数字）与 episode.bare（孤立数字）会把标题里的数字当成
+# 集数（`[VCB-Studio] Hibike! Euphonium 2 [01]` 会被读成 2），因此不作为依据。
+_STRONG_EPISODE_RULES = frozenset(
+    {
+        "episode.chinese",
+        "episode.explicit",
+        "episode.season-compact",
+        "episode.season-words",
+        "episode.season-range-compact",
+        "episode.season-range-words",
+    }
+)
+
+
+def _plausible_episode(episode) -> bool:
+    """集数只接受整数或半集（``12.5``），避免把 ``S01E01.2026`` 读成 1.2026。"""
+    if isinstance(episode, float) and episode != int(episode):
+        return abs(episode * 2 - round(episode * 2)) < 1e-9
+    return 0 <= episode <= 9999
+
+
+def _episode_rule(trace) -> str:
+    """胜出的集数候选来自哪条规则（``candidate_id`` 形如 ``episode.chinese:1:8:12``）。"""
+    for decision in getattr(trace, "decisions", ()) or ():
+        status = getattr(decision, "status", None)
+        if getattr(status, "value", status) != "selected":
+            continue
+        fields = getattr(decision, "won_fields", ()) or ()
+        if any(getattr(field, "value", field) == "episode" for field in fields):
+            return str(getattr(decision, "candidate_id", "")).split(":", 1)[0]
+    return ""
+
+
+def _parsed_episode(
+    torrent_path: str,
+    match_names: list[str],
+    season: int | None,
+    file_type: str = "media",
+) -> EpisodeFile | SubtitleFile | None:
+    """用配置的解析器（tokenizer/classic）取集数，取不到就交回旧的五条正则。
+
+    正片与字幕共用这一条路径，两者的标题/季/集因此不会各说各话。
+    """
+    from module.parser.analyser.selector import (
+        parse_configured_release_title_with_trace,
+    )
+    from module.parser.analyser.tokenizer import MediaType, ReleaseKind
+
+    suffix = Path(torrent_path).suffix
+    basename = get_path_basename(torrent_path)
+    for candidate in match_names:
+        if not candidate:
+            continue
+        outcome = parse_configured_release_title_with_trace(candidate)
+        release = outcome.result
+        if release is None or release.episode is None:
+            continue
+        if not _plausible_episode(release.episode):
+            continue
+        if not (release.title_zh or release.title_jp or release.title_en):
+            continue
+        if release.is_mixed_collection:
+            continue
+        if release.release_kind is not ReleaseKind.SINGLE:
+            continue
+        if release.media_type not in {MediaType.EPISODE, MediaType.UNKNOWN}:
+            continue
+        if _episode_rule(outcome.trace) not in _STRONG_EPISODE_RULES:
+            continue
+        # 标题语言优先级：中 > 日 > 英（自用偏好，默认的 primary_title 是 英 > 中 > 日）
+        title: str = release.title_zh or release.title_jp or release.title_en or ""
+        parsed_season = season or release.season or 1
+        if file_type == "subtitle":
+            language = get_subtitle_lang(basename)
+            if language is None:
+                return None
+            return SubtitleFile(
+                media_path=torrent_path,
+                group=release.group,
+                title=title,
+                season=parsed_season,
+                episode=release.episode,
+                language=language,  # type: ignore[arg-type]
+                suffix=suffix,
+            )
+        return EpisodeFile(
+            media_path=torrent_path,
+            group=release.group,
+            title=title,
+            season=parsed_season,
+            episode=release.episode,
+            suffix=suffix,
+        )
+    return None
+
+
 def _torrent_parser_impl(
     torrent_path: str,
     torrent_name: str | None = None,
@@ -153,6 +250,10 @@ def _torrent_parser_impl(
     match_names = (
         [torrent_name, media_path] if torrent_name is not None else [media_path]
     )
+    if file_type in {"media", "subtitle"} and episode_type == "episode":
+        parsed = _parsed_episode(torrent_path, match_names, season, file_type)
+        if parsed is not None:
+            return parsed
     for match_name in match_names:
         for compiled_rule in COMPILED_RULES:
             match_obj = compiled_rule.match(match_name)

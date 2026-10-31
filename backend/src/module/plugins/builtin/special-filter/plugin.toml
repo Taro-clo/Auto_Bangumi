@@ -1,0 +1,16 @@
+[plugin]
+id = "special-filter"
+name = "特典过滤器"
+version = "0.5.0"
+sdk = ">=0.4,<1"
+entry = "special_filter:SpecialFilter"
+description = "把 PV / CM / OP / ED / Menu / Scan / 映像特典 等非正片文件排除在重命名之外（classify → ignore）。特典目录与白名单在插件选项里维护，特典文件名规则在「设置 → 特典规则」里一行一条编辑。"
+authors = ["Taro-clo"]
+default_enabled = true
+extension_points = ["media_files", "api_router"]
+
+[[plugin.ui]]
+slot = "settings.section"
+element = "ab-plugin-special-filter-rules"
+entry = "web/index.js"
+title = { zh-CN = "特典规则", en-US = "Special rules" }

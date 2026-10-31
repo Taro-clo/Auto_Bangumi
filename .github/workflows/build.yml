@@ -8,7 +8,9 @@ on:
     branches:
       - main
       - "3.*-dev"
-  push:
+  # fork 里关掉 push 触发：上游的 release 分支依赖 DockerHub / ACCESS_TOKEN /
+  # UPDATE_SIGNING_KEY 等本 fork 不存在的 secret，镜像改由 fork-image.yml 构建。
+  workflow_dispatch:
 
 jobs:
   test:
