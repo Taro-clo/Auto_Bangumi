@@ -40,6 +40,8 @@ _DEFAULT_PATTERNS = [
     r"web\s*preview|(?<![\w])preview(?![\w])",
     r"[\[\(【]\s*(?:nco?p|nced|cm|pv|sp|menu|scans?|op|ed)(?:\s*[\w\-]{1,8})?\s*[\]\)】]",
     r"(?<![\w])(?:nco?p|nced|cm|pv|op|ed)\d{1,2}(?![\w])",
+    # Info01 / Menu01 / Digest02 这类「非剧集」标记；不拦会让整个种子卡在解析失败上
+    r"(?<![\w])(?:info|menu|digest|recap|trailer)\d{1,2}(?![\w])",
     r"全\d{1,4}[话話集]",
     r"番組宣伝|宣伝映像|予告|振り返り|ダイジェスト|メイキング",
     r"ノンクレ(?:ジット)?|ピクチャードラマ|インタビュー|クリップ",
