@@ -2198,7 +2198,7 @@ class TestUnparsedNotification:
         renamer._notify_unparsed("h2", "Show", "pn")
         assert renamer.events == []
 
-    def test_reason_lists_at_most_three_names(self, monkeypatch):
+    def test_reason_lists_every_name(self, monkeypatch):
         from module.manager import renamer as renamer_module
         from module.notification.events import RenameSkippedEvent
 
@@ -2211,6 +2211,7 @@ class TestUnparsedNotification:
         assert len(renamer.events) == 1
         event = renamer.events[0]
         assert isinstance(event, RenameSkippedEvent)
-        assert "OAD01.mkv" in event.reason
-        assert "OAD05.mkv" not in event.reason
-        assert "5 个文件" in event.reason
+        for index in range(1, 6):
+            assert f"OAD0{index}.mkv" in event.reason
+        assert "等 5 个文件" not in event.reason
+        assert event.reason.startswith("以下 5 个文件")
