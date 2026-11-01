@@ -232,11 +232,7 @@ class Renamer(RevisionSaga):
         unique = sorted(set(names))
         limit = 50
         listed = "\n".join(f"- {name}" for name in unique[:limit])
-        more = (
-            f"\n- …另有 {len(unique) - limit} 个文件"
-            if len(unique) > limit
-            else ""
-        )
+        more = f"\n- …另有 {len(unique) - limit} 个文件" if len(unique) > limit else ""
         self.events.append(
             RenameSkippedEvent(
                 task_id=_hash,
