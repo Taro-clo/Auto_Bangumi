@@ -229,14 +229,23 @@ class Renamer(RevisionSaga):
         if key in _unparsed_notified:
             return
         _unparsed_notified.add(key)
-        shown = "、".join(names[:3])
-        suffix = f" 等 {len(names)} 个文件" if len(names) > 3 else ""
+        unique = sorted(set(names))
+        limit = 50
+        listed = "\n".join(f"- {name}" for name in unique[:limit])
+        more = (
+            f"\n- …另有 {len(unique) - limit} 个文件"
+            if len(unique) > limit
+            else ""
+        )
         self.events.append(
             RenameSkippedEvent(
                 task_id=_hash,
                 torrent_name=torrent_name,
                 strategy=method,
-                reason=f"以下文件解析不出集数，整理未完成：{shown}{suffix}",
+                reason=(
+                    f"以下 {len(unique)} 个文件解析不出集数，已保留原名：\n{listed}{more}\n"
+                    f"确认无误后可在 qB 给种子 {_hash[:12]} 打 ab:renamed 标签。"
+                ),
             )
         )
 

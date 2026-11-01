@@ -126,7 +126,7 @@ function onClearClick() {
               {{ store.titleOf(msg) }}
               <span v-if="msg.count > 1" class="notification-count">×{{ msg.count }}</span>
             </div>
-            <div class="notification-body">
+            <div :class="['notification-body', { 'is-multiline': store.bodyOf(msg).includes('\n') }]">
               {{ store.bodyOf(msg) }}
             </div>
             <div class="notification-meta">
@@ -401,6 +401,13 @@ function onClearClick() {
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow-wrap: anywhere;
+}
+
+.notification-body.is-multiline {
+  -webkit-line-clamp: unset;
+  white-space: pre-line;
+  max-height: 46vh;
+  overflow-y: auto;
 }
 
 .notification-meta {

@@ -54,7 +54,9 @@ export const useNotificationStore = defineStore('notification', () => {
         'config.manage_set.strategy_labels',
         String(payload.strategy ?? '')
       );
-      return t(`notifications.kind.${msg.kind}.body`, { ...payload, strategy });
+      const text = t(`notifications.kind.${msg.kind}.body`, { ...payload, strategy });
+      // 服务端正文里有换行时（例如逐行列出所有未改名的文件）直接用正文，避免被模板截断。
+      return msg.body && msg.body.includes('\n') ? msg.body : text;
     }
     return t(`notifications.kind.${msg.kind}.body`, payload);
   }
