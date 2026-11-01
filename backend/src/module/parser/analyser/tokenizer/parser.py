@@ -154,7 +154,12 @@ _CODEC = re.compile(
 )
 _AUDIO = re.compile(
     r"(?<![A-Za-z0-9])(?:AAC|FLAC|MP3|AC-?3|E-?AC-?3|DDP(?:\d(?:\.\d)?)?|"
-    r"DTS|Opus|Dual[-_ ]?Audio)(?![A-Za-z0-9])",
+    r"DTS|Opus|Dual[-_ ]?Audio)(?:x[0-9]{1,2})?(?![A-Za-z0-9])",
+    re.I,
+)
+_DISC = re.compile(r"(?<!\w)BD(?=\s)", re.I)
+_CHROMA = re.compile(
+    r"(?<![A-Za-z0-9])YUV[0-9]{3}P[0-9]+(?![A-Za-z0-9])",
     re.I,
 )
 _CONTAINER = re.compile(r"(?<![A-Za-z0-9])(MP4|MKV|AVI)(?![A-Za-z0-9])", re.I)
@@ -1238,6 +1243,8 @@ _TECHNICAL_PATTERNS = (
     _AUDIO,
     _SUBTITLE,
     _CONTAINER,
+    _CHROMA,
+    _DISC,
 )
 
 
@@ -1310,6 +1317,26 @@ def _collect_technical_candidates(collector: _CandidateCollector) -> None:
                 specificity=2 if container_match else 1,
             )
 
+        for match in _DISC.finditer(text):
+            collector.add_match(
+                rule_id="technical.disc",
+                kind="tag",
+                segment_index=index,
+                match=match,
+                claims=Claims(tags=(match.group(),)),
+                priority=30,
+            )
+
+        for match in _CHROMA.finditer(text):
+            collector.add_match(
+                rule_id="technical.chroma",
+                kind="tag",
+                segment_index=index,
+                match=match,
+                claims=Claims(tags=(match.group(),)),
+                priority=30,
+            )
+
         for match in _CONTAINER.finditer(text):
             collector.add_match(
                 rule_id="technical.container",
@@ -1320,8 +1347,9 @@ def _collect_technical_candidates(collector: _CandidateCollector) -> None:
                 priority=30,
             )
 
-        if segment.enclosure == "square":
+        if segment.enclosure in ("square", "round"):
             residual = _clean_fragment(_pattern_residual(text, _TECHNICAL_PATTERNS))
+            residual = residual.strip("()（）[]【】 ")
             if residual and _CJK_SUBTITLE_TAG.fullmatch(residual):
                 collector.add_span(
                     rule_id="technical.subtitle-cjk",
@@ -1334,17 +1362,18 @@ def _collect_technical_candidates(collector: _CandidateCollector) -> None:
                     evidence=(),
                     overlap_policy=OverlapPolicy.SHARED,
                 )
-            if _DUB.search(text):
-                collector.add_span(
-                    rule_id="metadata.dub",
-                    kind="tag",
-                    segment_index=index,
-                    start=0,
-                    end=len(text),
-                    claims=Claims(tags=(text.strip(),)),
-                    priority=45,
-                    overlap_policy=OverlapPolicy.SHARED,
-                )
+
+        if segment.enclosure == "square" and _DUB.search(text):
+            collector.add_span(
+                rule_id="metadata.dub",
+                kind="tag",
+                segment_index=index,
+                start=0,
+                end=len(text),
+                claims=Claims(tags=(text.strip(),)),
+                priority=45,
+                overlap_policy=OverlapPolicy.SHARED,
+            )
 
         for match in _VERSION.finditer(text):
             collector.add_match(
