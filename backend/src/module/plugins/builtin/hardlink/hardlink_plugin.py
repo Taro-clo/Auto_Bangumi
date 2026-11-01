@@ -229,13 +229,22 @@ class HardlinkPlugin(Plugin[Options]):
     async def on_organized(self, event: TorrentOrganized) -> None:
         problems: list[str] = []
         linked = False
+        skipped = 0
         for f in event.files:
-            status, reason = await self.link(
-                Path(self.to_local(f.path, event.downloader_id))
-            )
+            local = Path(self.to_local(f.path, event.downloader_id))
+            # 源文件已被移走或删除时无事可做：不报错、不通知，否则每次重放
+            # ``torrent.organized`` 都会重复提醒一条已经消失的文件
+            if not local.is_file():
+                skipped += 1
+                continue
+            status, reason = await self.link(local)
             linked = linked or status == "linked"
             if status in ("conflict", "failed"):
                 problems.append(f"{f.path}：{reason}")
+        if skipped:
+            self.ctx.log.info(
+                "种子 %s 有 %d 个源文件已不存在，跳过", event.torrent_hash, skipped
+            )
         if linked:
             self.ctx.bus.publish(HardlinkLinked(torrent_hash=event.torrent_hash))
         if problems:
