@@ -22,7 +22,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import ClassVar, Literal
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from ab_sdk import Plugin, points, provider, subscribe
@@ -246,9 +246,46 @@ class HardlinkPlugin(Plugin[Options]):
                 )
             )
 
-    async def backfill(self) -> dict[Status, int]:
-        """把下载根目录下已有的正片与字幕补链到媒体库（只在用户触发时运行）。"""
-        root = Path(self.config.source_root)
+    def _scoped_root(self, subpath: str | None) -> Path:
+        """把 UI 传来的相对目录解析成下载根目录下的一棵子树。"""
+        root = Path(self.config.source_root).resolve()
+        if not subpath:
+            return root
+        candidate = (root / subpath).resolve()
+        if candidate != root and root not in candidate.parents:
+            raise HTTPException(status_code=400, detail="目录不在下载根目录下")
+        if not candidate.is_dir():
+            raise HTTPException(status_code=404, detail="目录不存在")
+        return candidate
+
+    def _subdirs(self) -> list[str]:
+        """列出可选的相对目录（最多两层：作品 / Season N）。"""
+        root = self._scoped_root(None)
+        found: list[str] = []
+        try:
+            level1 = sorted(
+                p for p in root.iterdir() if p.is_dir() and not p.name.startswith(".")
+            )
+        except OSError:
+            return found
+        for first in level1:
+            found.append(first.name)
+            try:
+                level2 = sorted(
+                    p
+                    for p in first.iterdir()
+                    if p.is_dir() and not p.name.startswith(".")
+                )
+            except OSError:
+                continue
+            found.extend(f"{first.name}/{second.name}" for second in level2)
+        return found
+
+    async def backfill(self, subpath: str | None = None) -> dict[Status, int]:
+        """把下载根目录（或其中某个子目录）下已有的正片与字幕补链到媒体库。"""
+        root = self._scoped_root(subpath)
+        if root != Path(self.config.source_root).resolve():
+            self.ctx.log.info("只补链目录 %s 下的文件", root)
         files = await asyncio.to_thread(
             lambda: sorted(
                 p
@@ -272,8 +309,16 @@ class HardlinkPlugin(Plugin[Options]):
     def api(self) -> APIRouter:
         router = APIRouter()
 
+        class BackfillRequest(BaseModel):
+            # 相对 source_root 的子目录；留空表示整棵下载根目录
+            path: str | None = None
+
+        @router.get("/dirs")
+        async def dirs() -> dict[str, list[str]]:
+            return {"dirs": await asyncio.to_thread(self._subdirs)}
+
         @router.post("/backfill")
-        async def backfill() -> dict[Status, int]:
-            return await self.backfill()
+        async def backfill(payload: BackfillRequest | None = None) -> dict[Status, int]:
+            return await self.backfill(payload.path if payload else None)
 
         return router
