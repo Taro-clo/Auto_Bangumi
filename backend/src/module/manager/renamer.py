@@ -64,6 +64,8 @@ _missing_methods: set[str] = set()
 _organized_published: dict[str, tuple[OrganizedFile, ...]] = {}
 # 已发送过「文件未重命名」通知的 (种子 hash, 原因)
 _skip_notified: set[tuple[str, str]] = set()
+# 已发送过「解析不出集数」通知的 (种子 hash, 本轮未能解析的文件名集合)
+_unparsed_notified: set[tuple[str, tuple[str, ...]]] = set()
 
 
 def _rename_strategy(method: str | ProviderEntry) -> ProviderEntry:
@@ -127,6 +129,8 @@ class Renamer(RevisionSaga):
         # 本轮各种子的实际重命名 (原路径, 新路径, 类别) 与被跳过的原因
         self._moves: dict[str, list[tuple[str, str, FileKind]]] = {}
         self._skipped: dict[str, str] = {}
+        # 本轮解析不出集数（因此无法重命名）的媒体文件，按种子记录
+        self._unparsed: dict[str, list[str]] = {}
 
     @staticmethod
     def gen_path(
@@ -210,6 +214,30 @@ class Renamer(RevisionSaga):
         self._skipped.setdefault(_hash, str(error))
         return MediaRenameReport(
             result=RenameResult(RenameOutcome.RETRYABLE_FAILURE, detail=str(error))
+        )
+
+    def _record_unparsed(self, _hash: str, path: str) -> None:
+        """解析不出集数的媒体文件：保留原名并记下，本轮结束时通知一次。"""
+        self._unparsed.setdefault(_hash, []).append(PurePath(path).name)
+
+    def _notify_unparsed(self, _hash: str, torrent_name: str, method: str) -> None:
+        """整理未完成且有文件解析不出集数时发一条通知（同种子同名单只发一次）。"""
+        names = self._unparsed.pop(_hash, [])
+        if not names:
+            return
+        key = (_hash, tuple(sorted(names)))
+        if key in _unparsed_notified:
+            return
+        _unparsed_notified.add(key)
+        shown = "、".join(names[:3])
+        suffix = f" 等 {len(names)} 个文件" if len(names) > 3 else ""
+        self.events.append(
+            RenameSkippedEvent(
+                task_id=_hash,
+                torrent_name=torrent_name,
+                strategy=method,
+                reason=f"以下文件解析不出集数，整理未完成：{shown}{suffix}",
+            )
         )
 
     async def rename_collection(
@@ -300,6 +328,7 @@ class Renamer(RevisionSaga):
                             logger.warning(f"{media_path} rename failed")
                 else:
                     # 解析失败的媒体文件不会被重命名——不能算处理完成
+                    self._record_unparsed(_hash, media_path)
                     all_renamed = False
         if all_renamed and mark_complete and _rename_strategy(method).id != NO_RENAME:
             await self._mark_renamed(_hash, existing_tags)
@@ -381,6 +410,7 @@ class Renamer(RevisionSaga):
             return self._skip(info["hash"], media_path, e)
         if prepared is None:
             logger.warning("%s parse failed", media_path)
+            self._record_unparsed(info["hash"], media_path)
             if settings.bangumi_manage.remove_bad_torrent:
                 await self.client.delete_torrent(hashes=info["hash"])
             return MediaRenameReport(
@@ -604,6 +634,7 @@ class Renamer(RevisionSaga):
                 )
             return
         if not organized:
+            self._notify_unparsed(torrent_hash, info["name"], method)
             return
         kinds: tuple[tuple[list[str], FileKind], ...] = (
             (media_list, "media"),

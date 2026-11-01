@@ -2146,3 +2146,71 @@ class TestLookupOffsets:
             )
 
         assert episode_offset == 3
+
+
+# ---------------------------------------------------------------------------
+# unparsed media notification
+# ---------------------------------------------------------------------------
+
+
+class TestUnparsedNotification:
+    """整理未完成、且有媒体文件解析不出集数时要发一条通知。"""
+
+    @staticmethod
+    def _renamer() -> Renamer:
+        renamer = Renamer.__new__(Renamer)
+        renamer.events = []
+        renamer._unparsed = {}
+        renamer._moves = {}
+        renamer._skipped = {}
+        return renamer
+
+    def test_notifies_once_per_file_set(self, monkeypatch):
+        from module.manager import renamer as renamer_module
+        from module.notification.events import RenameSkippedEvent
+
+        monkeypatch.setattr(renamer_module, "_unparsed_notified", set())
+        renamer = self._renamer()
+
+        renamer._record_unparsed("h1", "/d/Bangumi/Show/Season 1/OAD01.mkv")
+        renamer._record_unparsed("h1", "/d/Bangumi/Show/Season 1/OAD02.mkv")
+        renamer._notify_unparsed("h1", "Show", "pn")
+
+        assert len(renamer.events) == 1
+        event = renamer.events[0]
+        assert isinstance(event, RenameSkippedEvent)
+        assert event.task_id == "h1"
+        assert event.strategy == "pn"
+        assert "OAD01.mkv" in event.reason
+        assert "OAD02.mkv" in event.reason
+
+        # 同一批文件再来一轮：不重复通知
+        renamer._record_unparsed("h1", "/d/Bangumi/Show/Season 1/OAD01.mkv")
+        renamer._record_unparsed("h1", "/d/Bangumi/Show/Season 1/OAD02.mkv")
+        renamer._notify_unparsed("h1", "Show", "pn")
+        assert len(renamer.events) == 1
+
+    def test_no_event_when_nothing_unparsed(self, monkeypatch):
+        from module.manager import renamer as renamer_module
+
+        monkeypatch.setattr(renamer_module, "_unparsed_notified", set())
+        renamer = self._renamer()
+        renamer._notify_unparsed("h2", "Show", "pn")
+        assert renamer.events == []
+
+    def test_reason_lists_at_most_three_names(self, monkeypatch):
+        from module.manager import renamer as renamer_module
+        from module.notification.events import RenameSkippedEvent
+
+        monkeypatch.setattr(renamer_module, "_unparsed_notified", set())
+        renamer = self._renamer()
+        for index in range(1, 6):
+            renamer._record_unparsed("h3", f"/d/Bangumi/Show/Season 1/OAD0{index}.mkv")
+        renamer._notify_unparsed("h3", "Show", "pn")
+
+        assert len(renamer.events) == 1
+        event = renamer.events[0]
+        assert isinstance(event, RenameSkippedEvent)
+        assert "OAD01.mkv" in event.reason
+        assert "OAD05.mkv" not in event.reason
+        assert "5 个文件" in event.reason
