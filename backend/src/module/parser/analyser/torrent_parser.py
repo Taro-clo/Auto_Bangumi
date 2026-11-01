@@ -154,6 +154,58 @@ _STRONG_EPISODE_RULES = frozenset(
 )
 
 
+_SUBTITLE_BRACKET = re.compile(r"[\[(【]([^\])】]{1,48})[\])】]")
+# 只把「整段括号都是这些词」的括号当作字幕/语言标签，避免把 [1080p AVC AAC] 当成标签。
+_SUBTITLE_TOKENS = frozenset(
+    {
+        "SC",
+        "TC",
+        "JPSC",
+        "JPTC",
+        "CHS",
+        "CHT",
+        "CHS_JP",
+        "CHT_JP",
+        "GB",
+        "BIG5",
+        "简",
+        "繁",
+        "简繁",
+        "简繁内封",
+        "内封",
+        "字幕",
+    }
+)
+
+
+def _subtitle_tail_tags(name: str) -> tuple[str, ...]:
+    """收集纯标签括号里的词，例如 ``[SC_TC]`` -> ``("SC", "TC")``。"""
+    tags: list[str] = []
+    for raw in _SUBTITLE_BRACKET.findall(name):
+        parts = [part for part in re.split(r"[\s_\-/&+,]+", raw.strip()) if part]
+        if not parts:
+            continue
+        if all(
+            part.upper() in _SUBTITLE_TOKENS or part in _SUBTITLE_TOKENS
+            for part in parts
+        ):
+            tags.extend(parts)
+    return tuple(tags)
+
+
+def _strip_subtitle_tail(title: str, tags: tuple[str, ...]) -> str:
+    """标题结尾与标签词逐词一致时才剥离，其余情况原样返回。"""
+    if not tags:
+        return title
+    words = title.split()
+    if len(tags) > len(words):
+        return title
+    tail = [word.strip("[]()【】").upper() for word in words[-len(tags) :]]
+    if tail != [tag.upper() for tag in tags]:
+        return title
+    return " ".join(words[: -len(tags)])
+
+
 def _plausible_episode(episode) -> bool:
     """集数只接受整数或半集（``12.5``），避免把 ``S01E01.2026`` 读成 1.2026。"""
     if isinstance(episode, float) and episode != int(episode):
@@ -211,6 +263,8 @@ def _parsed_episode(
             continue
         # 标题语言优先级：中 > 日 > 英（自用偏好，默认的 primary_title 是 英 > 中 > 日）
         title: str = release.title_zh or release.title_jp or release.title_en or ""
+        tail_tags = _subtitle_tail_tags(candidate) or _subtitle_tail_tags(basename)
+        title = _strip_subtitle_tail(title, tail_tags) or title
         parsed_season = season or release.season or 1
         if file_type == "subtitle":
             language = get_subtitle_lang(basename)
