@@ -35,19 +35,23 @@ _RULES_FILE = "rules.json"
 _DEFAULT_DIRS = ["映像特典", "特典", "SPs", "Extras", "Bonus", "Scan"]
 
 #: 默认特典文件名规则（逐条正则，命中即忽略）
+#: 合并原则：形态相同（都是裸子串 / 都带同样的词边界）的分支合成一条，
+#: 语义不变；形态不同的（括号锚定、数字紧跟）保持独立，避免放宽边界条件。
 _DEFAULT_PATTERNS = [
-    r"ncop|nced|creditless",
-    r"web\s*preview|(?<![\w])preview(?![\w])",
+    # 裸子串：无词边界要求，命中即特殊
+    r"ncop|nced|creditless|web\s*preview|(?<![\w])preview(?![\w])",
+    # 整个方/圆括号都是特殊标记，如 [NCOP01]、[PV]、[CM02]
     r"[\[\(【]\s*(?:nco?p|nced|cm|pv|sp|menu|scans?|op|ed)(?:\s*[\w\-]{1,8})?\s*[\]\)】]",
-    r"(?<![\w])(?:nco?p|nced|cm|pv|op|ed)\d{1,2}(?![\w])",
-    # Info01 / Menu01 / Digest02 这类「非剧集」标记；不拦会让整个种子卡在解析失败上
-    r"(?<![\w])(?:info|menu|digest|recap|trailer)\d{1,2}(?![\w])",
+    # 标记 + 1~2 位数字，如 ED01、PV2、Info01、Menu01、OAD01、Digest02
+    # （后面两类没有集数；不拦会让整个种子卡在解析失败上）
+    r"(?<![\w])(?:nco?p|nced|cm|pv|op|ed|info|menu|digest|recap|trailer|oad)\d{1,2}(?![\w])",
+    # 全集批量，如 全12話
     r"全\d{1,4}[话話集]",
-    r"番組宣伝|宣伝映像|予告|振り返り|ダイジェスト|メイキング",
-    r"ノンクレ(?:ジット)?|ピクチャードラマ|インタビュー|クリップ",
-    r"tv\s*special|tv\s*スペシャル|キャラクターpv|チャラクターpv|cm集|pv\s*・\s*cm",
-    # OAD01 / OAD02 这类没有集数的 OVA 单集；不拦会让整个种子卡在解析失败上
-    r"(?<![\w])OAD\d{1,2}(?![\w])",
+    # 日文/英文的「非正片」用语（同样是裸子串）
+    r"番組宣伝|宣伝映像|予告|振り返り|ダイジェスト|メイキング"
+    r"|ノンクレ(?:ジット)?|ピクチャードラマ|インタビュー|クリップ"
+    r"|tv\s*special|tv\s*スペシャル|キャラクターpv|チャラクターpv|cm集|pv\s*・\s*cm",
+    # 带词边界的「特別編」类；与上面的裸子串分开，避免放宽边界
     r"(?<![\w])(?:特別編|総集編|スペシャル)(?![\w])",
 ]
 
