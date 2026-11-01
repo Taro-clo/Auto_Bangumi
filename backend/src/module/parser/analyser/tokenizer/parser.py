@@ -1317,15 +1317,18 @@ def _collect_technical_candidates(collector: _CandidateCollector) -> None:
                 specificity=2 if container_match else 1,
             )
 
-        for match in _DISC.finditer(text):
-            collector.add_match(
-                rule_id="technical.disc",
-                kind="tag",
-                segment_index=index,
-                match=match,
-                claims=Claims(tags=(match.group(),)),
-                priority=30,
-            )
+        # BD 只作为「括号内的技术标记」处理：标题正文里的 BD 当作正文，
+        # 避免以后出现名字里真含 BD 的作品时被误吞。语料里 100% 的 BD 都在括号内。
+        if segment.enclosure is not None:
+            for match in _DISC.finditer(text):
+                collector.add_match(
+                    rule_id="technical.disc",
+                    kind="tag",
+                    segment_index=index,
+                    match=match,
+                    claims=Claims(tags=(match.group(),)),
+                    priority=30,
+                )
 
         for match in _CHROMA.finditer(text):
             collector.add_match(
